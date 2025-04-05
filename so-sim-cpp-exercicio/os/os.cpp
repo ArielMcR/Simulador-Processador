@@ -159,40 +159,6 @@ namespace OS
 		cpu->write_io(IO_Port::TerminalUpload, ' ');
 	}
 
-	void interrupt(const Arch::InterruptCode interrupt)
-	{
-		if (interrupt == InterruptCode::Keyboard)
-		{
-			static bool processing_interrupt = false;
-			if (!processing_interrupt)
-			{
-				processing_interrupt = true;
-				handle_keyboard_interrupt();
-				processing_interrupt = false;
-			}
-		}
-	}
-
-	void syscall()
-	{
-		uint16_t code = cpu->get_gpr(0);
-		switch (code)
-		{
-		case 0:
-			current_process.running = false;
-			break;
-		case 1:
-			terminal_print(cpu, Terminal::App, static_cast<char>(cpu->get_gpr(1)));
-			break;
-		case 2:
-			terminal_print(cpu, Terminal::App, "\n");
-			break;
-		case 3:
-			terminal_print(cpu, Terminal::App, std::to_string(cpu->get_gpr(1)));
-			break;
-		}
-	}
-
 	// void handle_cpu_exception(CpuException ex)
 	// {
 	// 	if (ex == CpuException::VmemPageFault)
@@ -213,6 +179,7 @@ namespace OS
 		terminal_println(cpu, Terminal::App, "Saída dos apps aqui");
 		terminal_println(cpu, Terminal::Kernel, "Saída do kernel aqui");
 
+		// era para ler o teclado mas não ta funcionando legal não, não sei se é assim que chama o teclado
 		cpu->write_io(IO_Port::TerminalSet, static_cast<uint16_t>(Terminal::Command));
 		cpu->write_io(IO_Port::TerminalUpload, '>');
 		cpu->write_io(IO_Port::TerminalUpload, ' ');
@@ -238,6 +205,38 @@ namespace OS
 			//  {
 			//  	handle_cpu_exception(ex);
 			//  }
+		}
+	}
+	void interrupt(const Arch::InterruptCode interrupt)
+	{
+		if (interrupt == InterruptCode::Keyboard)
+		{
+			static bool processing_interrupt = false;
+			if (!processing_interrupt)
+			{
+				processing_interrupt = true;
+				handle_keyboard_interrupt();
+				processing_interrupt = false;
+			}
+		}
+	}
+	void syscall()
+	{
+		uint16_t code = cpu->get_gpr(0);
+		switch (code)
+		{
+		case 0:
+			current_process.running = false;
+			break;
+		case 1:
+			terminal_print(cpu, Terminal::App, static_cast<char>(cpu->get_gpr(1)));
+			break;
+		case 2:
+			terminal_print(cpu, Terminal::App, "\n");
+			break;
+		case 3:
+			terminal_print(cpu, Terminal::App, std::to_string(cpu->get_gpr(1)));
+			break;
 		}
 	}
 } // namespace OS
