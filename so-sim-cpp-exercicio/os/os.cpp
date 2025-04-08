@@ -126,10 +126,11 @@ namespace OS
 	void handle_keyboard_interrupt()
 	{
 		uint16_t key = cpu->read_io(IO_Port::TerminalReadTypedChar);
+		char keyResponses = static_cast(char) key;
 		if (key == 0)
 			return;
-
-		switch (key)
+		
+		switch (keyResponses)
 		{
 		case 'q':
 			terminal_println(cpu, Terminal::Kernel, "Desligando...");
@@ -209,16 +210,7 @@ namespace OS
 	}
 	void interrupt(const Arch::InterruptCode interrupt)
 	{
-		if (interrupt == InterruptCode::Keyboard)
-		{
-			static bool processing_interrupt = false;
-			if (!processing_interrupt)
-			{
-				processing_interrupt = true;
-				handle_keyboard_interrupt();
-				processing_interrupt = false;
-			}
-		}
+	handle_keyboard_interrupt();
 	}
 	void syscall()
 	{
