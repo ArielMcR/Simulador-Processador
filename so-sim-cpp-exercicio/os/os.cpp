@@ -210,6 +210,8 @@ namespace OS
 	}
 	void interrupt(const Arch::InterruptCode interrupt)
 	{
+	uint16_t key = cpu->read_io(IO_Port::TerminalReadTypedChar);
+	terminal_println(cpu, Terminal::Command, (char) key);
 	handle_keyboard_interrupt();
 	}
 	void syscall()
