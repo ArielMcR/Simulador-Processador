@@ -32,7 +32,7 @@ namespace OS
 
 	static Process current_process;
 	static Process idle_process;
-	static Arch::Cpu *cpu;
+	Arch::Cpu *cpu;
 	static bool is_computer_running = false;
 
 	void setup_process_memory(const Process &p)
