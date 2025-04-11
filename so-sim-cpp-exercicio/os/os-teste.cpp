@@ -161,7 +161,7 @@ namespace OS
 			
 			uint16_t key = cpu->read_io(IO_Port::TerminalReadTypedChar);
 			if(key ){ 
-			cpu->interrupt(interruptCode);
+			cpu->force_interrupt(static_cast<InterruptCode>(0));
 
 			}
 
