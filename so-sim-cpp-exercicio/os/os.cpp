@@ -6,7 +6,8 @@
 #include <cstdlib>
 #include <fstream>
 #include <vector>
-
+#include <thread>
+#include <chrono>
 #include "../config.h"
 #include "../lib.h"
 #include "../arch/arch.h"
@@ -15,12 +16,6 @@
 
 namespace OS
 {
-	using VmemMode = Arch::Cpu::VmemMode;
-	using CpuException = Arch::Cpu::CpuException;
-	using InterruptCode = Arch::InterruptCode;
-	using IO_Port = Arch::IO_Port;
-	using Terminal = Arch::Terminal::Type;
-
 	struct Process
 	{
 		uint16_t pc;
@@ -122,15 +117,47 @@ namespace OS
 		current_process.running = false;
 		terminal_println(cpu, Terminal::Kernel, "Processo encerrado");
 	}
+	// void handle_cpu_exception(CpuException ex)
+	// {
+	// 	if (ex == CpuException::VmemPageFault)
+	// 	{
+	// 		terminal_println(cpu, Terminal::Kernel, "Exceção: VmemPageFault em " + std::to_string(cpu->get_pc()));
+	// 		kill_current_process();
+	// 	}
+	// }
 
-	void handle_keyboard_interrupt()
+	void boot(Arch::Cpu *cpu_ptr)
+	{
+		cpu = cpu_ptr;
+		is_computer_running = true;
+		terminal_println(cpu, Terminal::Kernel, "Saída do kernel aqui");
+		init_idle();
+		current_process = idle_process;
+
+		terminal_println(cpu, Terminal::Command, "Comandos: q=sair, l=carregar, k=matar");
+		terminal_println(cpu, Terminal::App, "Saida dos apps aqui");
+
+		while (is_computer_running)
+		{
+			if (!current_process.running)
+			{
+				current_process = idle_process;
+				terminal_println(cpu, Terminal::Kernel, "Executando idle process");
+			}
+			setup_process_memory(current_process);
+			cpu->set_pc(current_process.pc);
+
+			cpu->run_cycle();
+			current_process.pc = cpu->get_pc();
+			// tava aparecendo as coisas muito rapido, coloquei um timer aqui 
+			std::this_thread::sleep_for(std::chrono::milliseconds(50));
+		}
+	}
+
+	void interrupt(const Arch::InterruptCode interrupt)
 	{
 		uint16_t key = cpu->read_io(IO_Port::TerminalReadTypedChar);
-		char keyResponses = static_cast(char) key;
-		if (key == 0)
-			return;
-		
-		switch (keyResponses)
+		switch (key)
 		{
 		case 'q':
 			terminal_println(cpu, Terminal::Kernel, "Desligando...");
@@ -150,69 +177,7 @@ namespace OS
 				kill_current_process();
 			}
 			break;
-		default:
-			cpu->write_io(IO_Port::TerminalSet, static_cast<uint16_t>(Terminal::Command));
-			cpu->write_io(IO_Port::TerminalUpload, key);
 		}
-
-		cpu->write_io(IO_Port::TerminalSet, static_cast<uint16_t>(Terminal::Command));
-		cpu->write_io(IO_Port::TerminalUpload, '>');
-		cpu->write_io(IO_Port::TerminalUpload, ' ');
-	}
-
-	// void handle_cpu_exception(CpuException ex)
-	// {
-	// 	if (ex == CpuException::VmemPageFault)
-	// 	{
-	// 		terminal_println(cpu, Terminal::Kernel, "Exceção: VmemPageFault em " + std::to_string(cpu->get_pc()));
-	// 		kill_current_process();
-	// 	}
-	// }
-
-	void boot(Arch::Cpu *cpu_ptr)
-	{
-		cpu = cpu_ptr;
-		is_computer_running = true;
-		init_idle();
-		current_process = idle_process;
-
-		terminal_println(cpu, Terminal::Command, "Comandos: q=sair, l=carregar, k=matar");
-		terminal_println(cpu, Terminal::App, "Saída dos apps aqui");
-		terminal_println(cpu, Terminal::Kernel, "Saída do kernel aqui");
-
-		// era para ler o teclado mas não ta funcionando legal não, não sei se é assim que chama o teclado
-		cpu->write_io(IO_Port::TerminalSet, static_cast<uint16_t>(Terminal::Command));
-		cpu->write_io(IO_Port::TerminalUpload, '>');
-		cpu->write_io(IO_Port::TerminalUpload, ' ');
-
-		while (is_computer_running)
-		{
-			if (!current_process.running)
-			{
-				current_process = idle_process;
-				terminal_println(cpu, Terminal::Kernel, "Executando idle process");
-			}
-
-			setup_process_memory(current_process);
-			cpu->set_pc(current_process.pc);
-
-			cpu->run_cycle();
-
-			current_process.pc = cpu->get_pc();
-
-			// Não sei como fazer isso, deu erro quando tentei fazer
-			//  CpuException ex = cpu->get_cpu_exception();
-			//  if (ex != CpuException::NoException)
-			//  {
-			//  	handle_cpu_exception(ex);
-			//  }
-		}
-	}
-	void interrupt(const Arch::InterruptCode interrupt)
-	{
-	uint16_t key = cpu->read_io(IO_Port::TerminalReadTypedChar);
-	terminal_println(cpu, Terminal::Command, (char) key);
-	handle_keyboard_interrupt();
 	}
 	void syscall()
 	{
