@@ -1,4 +1,3 @@
-
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -13,6 +12,7 @@
 #include "../arch/arch.h"
 #include "os.h"
 #include "os-lib.h"
+using namespace Arch;
 
 namespace OS
 {
@@ -23,6 +23,15 @@ namespace OS
 		bool running;
 		uint16_t base;
 		uint16_t limit;
+		
+		void reset_registers() {
+			for (int i = 0; i < 8; i++)
+				registers[i] = 0;
+		}
+		
+		bool is_idle() const {
+			return pc == 0x0000;
+		}
 	};
 
 	static Process current_process;
@@ -56,7 +65,30 @@ namespace OS
 		}
 		return buffer;
 	}
-
+	void load_program(const std::string &filename = "print.bin")
+	{
+		try
+		{
+			auto program_code = read_binary_file(filename);
+			cpu->set_vmem_mode(VmemMode::Disabled);
+			for (size_t i = 0; i < program_code.size(); i++)
+			{
+				cpu->pmem_write(0x2000 + i, program_code[i]);
+			}
+			current_process.pc = 0x2000;
+			current_process.running = true;
+			current_process.base = 0x2000;
+			current_process.limit = static_cast<uint16_t>(program_code.size());
+			for (int i = 0; i < 8; i++)
+				current_process.registers[i] = 0;
+			terminal_println(cpu, Terminal::Kernel, "Programa " + filename + " carregado em 0x2000");
+		}
+		catch (const std::exception &e)
+		{
+			terminal_println(cpu, Terminal::Kernel, "Erro ao carregar programa: " + std::string(e.what()));
+			current_process.running = false;
+		}
+	}
 	void init_idle()
 	{
 		try
@@ -87,7 +119,7 @@ namespace OS
 		}
 	}
 
-	void load_program(const std::string &filename = "print.bin")
+	void load_process(const std::string &filename, Process &process, uint16_t base)
 	{
 		try
 		{
@@ -95,9 +127,12 @@ namespace OS
 			cpu->set_vmem_mode(VmemMode::Disabled);
 			for (size_t i = 0; i < program_code.size(); i++)
 			{
-				cpu->pmem_write(0x2000 + i, program_code[i]);
+				cpu->pmem_write(base + i, program_code[i]);
 			}
-			current_process.pc = 0x2000;
+			process.pc = base;
+			process.running = true;
+			process.base = base;
+			process.limit = static_cast<uint16_t>(program_code.size());
 			current_process.running = true;
 			current_process.base = 0x2000;
 			current_process.limit = static_cast<uint16_t>(program_code.size());
@@ -117,53 +152,61 @@ namespace OS
 		current_process.running = false;
 		terminal_println(cpu, Terminal::Kernel, "Processo encerrado");
 	}
-	// void handle_cpu_exception(CpuException ex)
-	// {
-	// 	if (ex == CpuException::VmemPageFault)
-	// 	{
-	// 		terminal_println(cpu, Terminal::Kernel, "Exceção: VmemPageFault em " + std::to_string(cpu->get_pc()));
-	// 		kill_current_process();
-	// 	}
-	// }
 
-	void boot(Arch::Cpu *cpu_ptr)
+	void handle_cpu_exception(const CpuException &ex)
 	{
-		cpu = cpu_ptr;
-		is_computer_running = true;
-		terminal_println(cpu, Terminal::Kernel, "Saída do kernel aqui");
-		init_idle();
-		current_process = idle_process;
-
-		terminal_println(cpu, Terminal::Command, "Comandos: q=sair, l=carregar, k=matar");
-		terminal_println(cpu, Terminal::App, "Saida dos apps aqui");
-
-		while (is_computer_running)
-		{
-			if (!current_process.running)
-			{
-				current_process = idle_process;
-				terminal_println(cpu, Terminal::Kernel, "Executando idle process");
-			}
-			setup_process_memory(current_process);
-			cpu->set_pc(current_process.pc);
-
-			cpu->run_cycle();
-			current_process.pc = cpu->get_pc();
-			// tava aparecendo as coisas muito rapido, coloquei um timer aqui 
-			std::this_thread::sleep_for(std::chrono::milliseconds(50));
+		switch (ex.type) {
+		case CpuException::Type::VmemPageFault:
+		case CpuException::Type::VmemGPFnotReadable:
+		case CpuException::Type::VmemGPFnotWritable:
+		case CpuException::Type::VmemGPFnotExecutable:
+			terminal_println(cpu, Terminal::Kernel, "GPF em " + std::to_string(ex.vaddr));
+			kill_current_process();
+			break;
+		case CpuException::Type::GPFinvalidInstruction:
+			terminal_println(cpu, Terminal::Kernel, "Instrução inválida em " + std::to_string(ex.vaddr));
+			kill_current_process();
+			break;
 		}
 	}
 
+	void boot(Arch::Cpu *cpu_ptr)
+	{
+		if (!cpu_ptr) {
+			throw std::runtime_error("CPU não pode ser nula");
+		}
+		
+		cpu = cpu_ptr;
+		is_computer_running = true;
+		
+		try {
+			terminal_println(cpu, Terminal::Kernel, "Iniciando kernel...");
+			init_idle();
+			current_process = idle_process;
+			
+			terminal_println(cpu, Terminal::Command, "Comandos: q=sair, l=carregar, k=matar");
+			terminal_println(cpu, Terminal::App, "Saida dos apps aqui");
+			
+			setup_process_memory(current_process);
+			cpu->set_pc(current_process.pc);
+			
+		}
+		catch (const std::exception &e) {
+			terminal_println(cpu, Terminal::Kernel, "Erro no boot: " + std::string(e.what()));
+			is_computer_running = false;
+		}
+	}
+	
+
 	void interrupt(const Arch::InterruptCode interrupt)
 	{
-		uint16_t key = cpu->read_io(IO_Port::TerminalReadTypedChar);
+		uint16_t key = cpu->read_io(Arch::IO_Port::TerminalReadTypedChar);
 		switch (key)
 		{
 		case 'q':
 			terminal_println(cpu, Terminal::Kernel, "Desligando...");
 			cpu->set_vmem_mode(VmemMode::Disabled);
 			Arch::Computer::get().turn_off();
-			is_computer_running = false;
 			break;
 		case 'l':
 			if (!current_process.running || current_process.pc == idle_process.pc)
@@ -179,6 +222,7 @@ namespace OS
 			break;
 		}
 	}
+
 	void syscall()
 	{
 		uint16_t code = cpu->get_gpr(0);
@@ -195,6 +239,9 @@ namespace OS
 			break;
 		case 3:
 			terminal_print(cpu, Terminal::App, std::to_string(cpu->get_gpr(1)));
+			break;
+		default:
+			terminal_println(cpu, Terminal::Kernel, "Syscall não suportada: " + std::to_string(code));
 			break;
 		}
 	}
