@@ -45,32 +45,13 @@ namespace OS
 		cpu->set_vmem_paddr_base(p.base);
 		cpu->set_vmem_size(p.limit);
 	}
-
-	std::vector<uint16_t> read_binary_file(const std::string &filename)
-	{
-		std::ifstream file(filename, std::ios::binary | std::ios::ate);
-		if (!file)
-		{
-			throw std::runtime_error("Failed to open file: " + filename);
-		}
-
-		std::streamsize size = file.tellg();
-		file.seekg(0, std::ios::beg);
-		size_t word_count = (size + 1) / 2;
-		std::vector<uint16_t> buffer(word_count);
-
-		if (!file.read(reinterpret_cast<char *>(buffer.data()), size))
-		{
-			throw std::runtime_error("Failed to read file: " + filename);
-		}
-		return buffer;
-	}
-	void load_program(const std::string &filename = "print.bin")
+	void load_program(const std::string &filename = "perfect-squares.bin")
 	{
 		try
 		{
-			auto program_code = read_binary_file(filename);
+			auto program_code = Lib::load_from_disk_to_16bit_buffer(filename);
 			cpu->set_vmem_mode(VmemMode::Disabled);
+			terminal_println(cpu, Terminal::Kernel, "program_code size = " + std::to_string(program_code.size()));
 			for (size_t i = 0; i < program_code.size(); i++)
 			{
 				cpu->pmem_write(0x2000 + i, program_code[i]);
@@ -89,11 +70,14 @@ namespace OS
 			current_process.running = false;
 		}
 	}
+	
 	void init_idle()
 	{
 		try
 		{
-			auto idle_code = read_binary_file("idle.bin");
+			auto idle_code = Lib::load_from_disk_to_16bit_buffer("idle.bin");
+			terminal_println(cpu, Terminal::Kernel, "idle_code size = " + std::to_string(idle_code.size()));
+
 			cpu->set_vmem_mode(VmemMode::Disabled);
 			for (size_t i = 0; i < idle_code.size(); i++)
 			{
@@ -102,11 +86,12 @@ namespace OS
 								 "Carregado: " + std::to_string(idle_code[i]) +
 									 " em " + std::to_string(0x0000 + i));
 			}
-
 			idle_process.pc = 0x0000;
-			idle_process.running = true;
-			idle_process.base = 0x0000;
-			idle_process.limit = static_cast<uint16_t>(idle_code.size());
+		idle_process.running = true;
+		idle_process.base = 0x0000;
+		idle_process.limit = static_cast<uint16_t>(idle_code.size());
+
+			
 		}
 		catch (const std::exception &e)
 		{
@@ -118,12 +103,14 @@ namespace OS
 			idle_process.limit = 0x100;
 		}
 	}
+	
+
 
 	void load_process(const std::string &filename, Process &process, uint16_t base)
 	{
 		try
 		{
-			auto program_code = read_binary_file(filename);
+			auto program_code = Lib::load_from_disk_to_16bit_buffer(filename);
 			cpu->set_vmem_mode(VmemMode::Disabled);
 			for (size_t i = 0; i < program_code.size(); i++)
 			{
@@ -229,7 +216,9 @@ namespace OS
 		switch (code)
 		{
 		case 0:
-			current_process.running = false;
+			cpu->force_interrupt(Arch::InterruptCode::CpuException);
+			terminal_println(cpu, Terminal::Kernel, "Programa finalizado");
+			
 			break;
 		case 1:
 			terminal_print(cpu, Terminal::App, static_cast<char>(cpu->get_gpr(1)));
